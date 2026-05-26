@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Pico W センサーマップ</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <script>
+    const map = L.map("map").setView([35.0045, 135.8686], 11);
+
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    const sensors = [
+      {
+        name: "大津 Pico W",
+        lat: 35.0045,
+        lng: 135.8686,
+        temp: 25.1,
+        hum: 40.3,
+        press: 1008.2
+      },
+      {
+        name: "京都 Pico W",
+        lat: 35.0116,
+        lng: 135.7681,
+        temp: 26.0,
+        hum: 42.5,
+        press: 1007.8
+      }
+    ];
+
+    sensors.forEach(s => {
+      L.marker([s.lat, s.lng])
+        .addTo(map)
+        .bindPopup(`
+          <b>${s.name}</b><br>
+          気温: ${s.temp} ℃<br>
+          湿度: ${s.hum} %<br>
+          気圧: ${s.press} hPa
+        `);
+    });
+  </script>
+</body>
+</html>
