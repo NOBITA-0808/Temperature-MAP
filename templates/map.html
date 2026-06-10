@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pico センサーマップ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; }
+    header { padding: 12px 16px; background: #f3f3f3; border-bottom: 1px solid #ddd; }
+    #map { height: 65vh; }
+    .panel { padding: 16px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f7f7f7; }
+    .small { color: #666; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <header>
+    <h2 style="margin:0;">Pico W センサーマップ</h2>
+    <div class="small">同じ名前のPicoは最新データだけ表示</div>
+  </header>
+
+  <div id="map"></div>
+
+  <div class="panel">
+    <h3>最新データ一覧</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>名前</th>
+          <th>気温(℃)</th>
+          <th>湿度(%)</th>
+          <th>気圧(hPa)</th>
+          <th>更新時刻</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map('map').setView([35.02, 135.86], 6);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let markers = [];
+
+    async function loadData() {
+      const res = await fetch('/api/latest');
+      const data = await res.json();
+
+      markers.forEach(m => map.removeLayer(m));
+      markers = [];
+
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+
+      const bounds = [];
+
+      data.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.device_name ?? ''}</td>
+          <td>${item.temp ?? ''}</td>
+          <td>${item.hum ?? ''}</td>
+          <td>${item.press ?? ''}</td>
+          <td>${item.updated_at ?? ''}</td>
+        `;
+        tbody.appendChild(tr);
+
+        if (item.lat != null && item.lng != null) {
+          const marker = L.marker([item.lat, item.lng]).addTo(map);
+          marker.bindPopup(`
+            <b>${item.device_name ?? ''}</b><br>
+            気温: ${item.temp ?? ''} ℃<br>
+            湿度: ${item.hum ?? ''} %<br>
+            気圧: ${item.press ?? ''} hPa<br>
+            更新: ${item.updated_at ?? ''}
+          `);
+          markers.push(marker);
+          bounds.push([item.lat, item.lng]);
+        }
+      });
+
+      if (bounds.length > 0) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+      }
+    }
+
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>
