@@ -1,7 +1,9 @@
+import csv
+import io
 import os
 import sqlite3
-from datetime import datetime, timezone
-from flask import Flask, request, jsonify, render_template, g
+from datetime import datetime, timezone, timedelta
+from flask import Flask, request, jsonify, render_template, g, Response
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, 'sensor_data.db')
@@ -53,12 +55,21 @@ def init_db():
         )
         '''
     )
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_history_device_time ON sensor_history(device_name, created_at)')
+    cur.execute('CREATE INDEX IF NOT EXISTS idx_history_time ON sensor_history(created_at)')
     db.commit()
     db.close()
 
 
-def utc_now_iso():
+def now_iso():
+    # Render上でも分かりやすいようにタイムゾーン付きISO文字列で保存
     return datetime.now(timezone.utc).astimezone().isoformat(timespec='seconds')
+
+
+def as_float(value):
+    if value is None or value == '':
+        return None
+    return float(value)
 
 
 @app.route('/')
@@ -79,12 +90,16 @@ def save_sensor_data():
     if not device_name:
         return jsonify({'ok': False, 'error': 'name is required'}), 400
 
-    temp = data.get('temp')
-    hum = data.get('hum')
-    press = data.get('press')
-    lat = data.get('lat')
-    lng = data.get('lng')
-    now = utc_now_iso()
+    try:
+        temp = as_float(data.get('temp'))
+        hum = as_float(data.get('hum'))
+        press = as_float(data.get('press'))
+        lat = as_float(data.get('lat'))
+        lng = as_float(data.get('lng'))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'temp/hum/press/lat/lng must be numbers'}), 400
+
+    created_at = now_iso()
 
     db = get_db()
     db.execute(
@@ -92,7 +107,7 @@ def save_sensor_data():
         INSERT INTO sensor_history (device_name, temp, hum, press, lat, lng, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ''',
-        (device_name, temp, hum, press, lat, lng, now)
+        (device_name, temp, hum, press, lat, lng, created_at)
     )
     db.execute(
         '''
@@ -106,18 +121,22 @@ def save_sensor_data():
             lng = excluded.lng,
             updated_at = excluded.updated_at
         ''',
-        (device_name, temp, hum, press, lat, lng, now)
+        (device_name, temp, hum, press, lat, lng, created_at)
     )
     db.commit()
 
-    return jsonify({'ok': True, 'saved_at': now})
+    return jsonify({'ok': True, 'saved_at': created_at})
 
 
 @app.route('/api/latest')
 def api_latest():
     db = get_db()
     rows = db.execute(
-        'SELECT device_name, temp, hum, press, lat, lng, updated_at FROM sensor_latest ORDER BY device_name'
+        '''
+        SELECT device_name, temp, hum, press, lat, lng, updated_at
+        FROM sensor_latest
+        ORDER BY device_name
+        '''
     ).fetchall()
     return jsonify([dict(row) for row in rows])
 
@@ -125,17 +144,63 @@ def api_latest():
 @app.route('/api/history')
 def api_history():
     device_name = request.args.get('name', '').strip()
-    limit = request.args.get('limit', '100').strip()
+    hours = request.args.get('hours', '').strip()
+    limit = request.args.get('limit', '500').strip()
+
     try:
-        limit_n = max(1, min(int(limit), 1000))
+        limit_n = max(1, min(int(limit), 5000))
     except ValueError:
-        limit_n = 100
+        limit_n = 500
+
+    since = None
+    if hours:
+        try:
+            hours_n = max(1, min(int(hours), 24 * 31))
+            since = (datetime.now(timezone.utc).astimezone() - timedelta(hours=hours_n)).isoformat(timespec='seconds')
+        except ValueError:
+            since = None
+
+    conditions = []
+    params = []
+    if device_name:
+        conditions.append('device_name = ?')
+        params.append(device_name)
+    if since:
+        conditions.append('created_at >= ?')
+        params.append(since)
+
+    where_sql = ''
+    if conditions:
+        where_sql = 'WHERE ' + ' AND '.join(conditions)
+
+    sql = f'''
+        SELECT device_name, temp, hum, press, lat, lng, created_at
+        FROM sensor_history
+        {where_sql}
+        ORDER BY created_at ASC
+        LIMIT ?
+    '''
+    params.append(limit_n)
+
+    db = get_db()
+    rows = db.execute(sql, params).fetchall()
+    return jsonify([dict(row) for row in rows])
+
+
+@app.route('/download.csv')
+def download_csv():
+    device_name = request.args.get('name', '').strip()
+    limit = request.args.get('limit', '5000').strip()
+    try:
+        limit_n = max(1, min(int(limit), 50000))
+    except ValueError:
+        limit_n = 5000
 
     db = get_db()
     if device_name:
         rows = db.execute(
             '''
-            SELECT device_name, temp, hum, press, lat, lng, created_at
+            SELECT id, device_name, temp, hum, press, lat, lng, created_at
             FROM sensor_history
             WHERE device_name = ?
             ORDER BY id DESC
@@ -146,18 +211,31 @@ def api_history():
     else:
         rows = db.execute(
             '''
-            SELECT device_name, temp, hum, press, lat, lng, created_at
+            SELECT id, device_name, temp, hum, press, lat, lng, created_at
             FROM sensor_history
             ORDER BY id DESC
             LIMIT ?
             ''',
             (limit_n,)
         ).fetchall()
-    return jsonify([dict(row) for row in rows])
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['id', 'device_name', 'temp', 'hum', 'press', 'lat', 'lng', 'created_at'])
+    for row in rows:
+        writer.writerow([row['id'], row['device_name'], row['temp'], row['hum'], row['press'], row['lat'], row['lng'], row['created_at']])
+
+    filename = 'sensor_history.csv' if not device_name else f'sensor_history_{device_name}.csv'
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
 
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
 else:
     init_db()
