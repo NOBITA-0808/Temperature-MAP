@@ -6,7 +6,8 @@ from datetime import datetime, timezone, timedelta
 from flask import Flask, request, jsonify, render_template, g, Response
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'sensor_data.db')
+#DB_PATH = os.path.join(BASE_DIR, 'sensor_data.db')
+DB_PATH = "/var/data/sensor_data.db"
 
 app = Flask(__name__)
 
