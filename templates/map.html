@@ -148,14 +148,39 @@
           datasets: [
             { label: '気温 ℃', data: rows.map(r => r.temp), tension: 0.25 },
             { label: '湿度 %', data: rows.map(r => r.hum), tension: 0.25 },
-            { label: '気圧 hPa', data: rows.map(r => r.press), tension: 0.25, hidden: true }
+            {
+                label: '気圧 hPa',
+                data: rows.map(r => r.press),
+                tension: 0.25,
+                yAxisID: 'yPressure'
+             }
           ]
         },
         options: {
           responsive: true,
           interaction: { mode: 'index', intersect: false },
           plugins: { legend: { position: 'top' } },
-          scales: { x: { ticks: { maxTicksLimit: 12 } } }
+          scales: {
+            x: {
+                ticks: { maxTicksLimit: 12 }
+            },
+            y: {
+                position: 'left'
+            },
+            yPressure: {
+                position: 'right',
+                min: 950,
+                max: 1050,
+                grid: {
+                    drawOnChartArea: false
+                },
+                title: {
+                    display: true,
+                    text: '気圧 (hPa)'
+                 }
+            }
+        }
+          
         }
       });
     }
