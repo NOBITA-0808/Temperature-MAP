@@ -1,192 +1,280 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pico W センサーマップ</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; color: #222; }
-    header { padding: 12px 16px; background: #f3f3f3; border-bottom: 1px solid #ddd; }
-    header h2 { margin: 0 0 4px; }
-    #map { height: 58vh; }
-    .panel { padding: 14px 16px; }
-    .small { color: #666; font-size: 0.9em; }
-    table { border-collapse: collapse; width: 100%; font-size: 0.95em; }
-    th, td { border: 1px solid #ccc; padding: 7px; text-align: left; }
-    th { background: #f7f7f7; }
-    tr:hover { background: #fffbe8; cursor: pointer; }
-    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-    .toolbar button, .toolbar a { padding: 7px 10px; border: 1px solid #ccc; background: #fff; text-decoration: none; color: #222; border-radius: 5px; }
-    .temp-label { background: white; border: 1px solid #555; border-radius: 14px; padding: 2px 7px; font-weight: bold; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
-    #chartBox { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin-top: 12px; }
-    #chartTitle { margin: 0 0 8px; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pico W センサーマップ</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.5.0/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1"></script>
+
+    <style>
+        :root {
+            color-scheme: light;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        }
+
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #172033; background: #f5f7fa; }
+        header { padding: 14px 18px; background: #fff; border-bottom: 1px solid #dce2e8; }
+        h1 { margin: 0 0 5px; font-size: clamp(1.35rem, 3vw, 2rem); }
+        header p { margin: 0; color: #586474; }
+        #map { width: 100%; height: min(48vh, 520px); min-height: 320px; }
+        main { max-width: 1500px; margin: 0 auto; padding: 16px; }
+        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+        button, .button {
+            appearance: none; border: 1px solid #bbc5d0; border-radius: 8px;
+            background: #fff; color: #172033; padding: 9px 13px;
+            font: inherit; cursor: pointer; text-decoration: none;
+        }
+        button:hover, .button:hover { background: #eef5ff; border-color: #4285f4; }
+        .status { align-self: center; color: #667385; font-size: .92rem; }
+        .card { background: #fff; border: 1px solid #dce2e8; border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+        .card h2 { margin: 0; padding: 14px 16px; font-size: 1.15rem; border-bottom: 1px solid #e4e8ed; }
+        .table-wrap { overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 720px; }
+        th, td { padding: 11px 13px; text-align: left; border-bottom: 1px solid #e4e8ed; }
+        th { background: #f7f9fb; white-space: nowrap; }
+        tbody tr { cursor: pointer; }
+        tbody tr:hover { background: #eef5ff; }
+        tbody tr.selected { background: #dcecff; box-shadow: inset 4px 0 #2878d0; }
+        .device-id { color: #6b7785; font-size: .82rem; display: block; margin-top: 2px; }
+        .charts { display: grid; grid-template-columns: 1fr; gap: 16px; }
+        .chart-box { position: relative; height: 360px; padding: 12px; }
+        .leaflet-tooltip.my-label {
+            background: rgba(255,255,255,.95); border: 1px solid #64748b;
+            border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,.2);
+            color: #111827; font-weight: 700; padding: 4px 7px;
+        }
+        .leaflet-tooltip.my-label::before { display: none; }
+        .empty { padding: 18px; color: #697586; }
+
+        @media (max-width: 700px) {
+            main { padding: 10px; }
+            #map { height: 42vh; min-height: 280px; }
+            .chart-box { height: 310px; padding: 8px; }
+            th, td { padding: 9px 10px; }
+        }
+    </style>
 </head>
 <body>
-  <header>
-    <h2>Pico W センサーマップ</h2>
-    <div class="small">MicroPython → Render → SQLite。地図は各端末の最新値、グラフは過去24時間の履歴です。</div>
-  </header>
+    <header>
+        <h1>Pico W センサーマップ</h1>
+        <p>行またはマーカーを選ぶと地点別グラフを表示します。比較グラフには全地点の温度を重ねます。</p>
+    </header>
 
-  <div id="map"></div>
+    <div id="map"></div>
 
-  <div class="panel">
-    <div class="toolbar">
-      <button onclick="loadLatest()">最新データ更新</button>
-      <a href="/download.csv">CSVダウンロード</a>
-      <span class="small">行またはマーカーをクリックすると24時間グラフを表示します。</span>
-    </div>
+    <main>
+        <div class="toolbar">
+            <button type="button" id="refreshButton">最新データ更新</button>
+            <a class="button" href="/csv">CSVダウンロード</a>
+            <span class="status" id="statusText">読み込み中…</span>
+        </div>
 
-    <h3>最新データ一覧</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>名前</th>
-          <th>気温(℃)</th>
-          <th>湿度(%)</th>
-          <th>気圧(hPa)</th>
-          <th>更新時刻</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-    </table>
+        <section class="card">
+            <h2>最新データ一覧</h2>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>場所</th>
+                            <th>気温（℃）</th>
+                            <th>湿度（%）</th>
+                            <th>気圧（hPa）</th>
+                            <th>更新時刻</th>
+                        </tr>
+                    </thead>
+                    <tbody id="latestBody"></tbody>
+                </table>
+            </div>
+            <div class="empty" id="emptyMessage" hidden>まだ測定データがありません。</div>
+        </section>
 
-    <div id="chartBox">
-      <h3 id="chartTitle">過去24時間グラフ</h3>
-      <canvas id="historyChart" height="110"></canvas>
-    </div>
-  </div>
+        <div class="charts">
+            <section class="card">
+                <h2 id="detailTitle">地点別の過去24時間グラフ</h2>
+                <div class="chart-box"><canvas id="detailChart"></canvas></div>
+            </section>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script>
-    const map = L.map('map').setView([35.02, 135.86], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+            <section class="card">
+                <h2>全地点の気温比較（過去24時間）</h2>
+                <div class="chart-box"><canvas id="compareChart"></canvas></div>
+            </section>
+        </div>
+    </main>
 
-    let markers = [];
-    let chart = null;
+    <script>
+        const COLORS = ["#2878d0", "#e74c67", "#f39c35", "#34a853", "#8e5cc7", "#00a6a6", "#795548", "#607d8b"];
+        const map = L.map("map").setView([35.004, 135.868], 12);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: "&copy; OpenStreetMap contributors",
+            maxZoom: 19
+        }).addTo(map);
 
-    function fmt(value, digits=1) {
-      if (value === null || value === undefined || value === '') return '';
-      const n = Number(value);
-      return Number.isFinite(n) ? n.toFixed(digits) : value;
-    }
+        let latest = [];
+        let selectedDevice = null;
+        const markerByDevice = new Map();
+        let detailChart = null;
+        let compareChart = null;
 
-    function clearMarkers() {
-      markers.forEach(m => map.removeLayer(m));
-      markers = [];
-    }
+        const formatValue = (value, digits = 2) =>
+            value == null ? "－" : Number(value).toFixed(digits);
 
-    async function loadLatest() {
-      const res = await fetch('/api/latest');
-      const data = await res.json();
-
-      clearMarkers();
-      const tbody = document.getElementById('tbody');
-      tbody.innerHTML = '';
-      const bounds = [];
-
-      data.forEach(item => {
-        const name = item.device_name ?? '';
-        const tempText = fmt(item.temp, 1);
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${name}</td>
-          <td>${fmt(item.temp, 2)}</td>
-          <td>${fmt(item.hum, 2)}</td>
-          <td>${fmt(item.press, 2)}</td>
-          <td>${item.updated_at ?? ''}</td>
-        `;
-        tr.onclick = () => loadHistory(name);
-        tbody.appendChild(tr);
-
-        if (item.lat != null && item.lng != null) {
-          const marker = L.marker([item.lat, item.lng]).addTo(map);
-          marker.bindTooltip(`${tempText}℃`, { permanent: true, direction: 'top', className: 'temp-label' });
-          marker.bindPopup(`
-            <b>${name}</b><br>
-            気温: ${fmt(item.temp, 2)} ℃<br>
-            湿度: ${fmt(item.hum, 2)} %<br>
-            気圧: ${fmt(item.press, 2)} hPa<br>
-            更新: ${item.updated_at ?? ''}<br>
-            <button onclick="loadHistory('${name.replaceAll("'", "\\'")}')">24時間グラフ</button>
-          `);
-          marker.on('click', () => loadHistory(name));
-          markers.push(marker);
-          bounds.push([item.lat, item.lng]);
+        function formatTime(value) {
+            if (!value) return "－";
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ja-JP");
         }
-      });
 
-      if (bounds.length > 0) {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
-        if (data.length > 0 && !chart) loadHistory(data[0].device_name);
-      }
-    }
+        function escapeHtml(value) {
+            return String(value ?? "").replace(/[&<>'"]/g, char => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;"
+            })[char]);
+        }
 
-    async function loadHistory(name) {
-      if (!name) return;
-      document.getElementById('chartTitle').textContent = `${name} の過去24時間グラフ`;
-      const res = await fetch(`/api/history?name=${encodeURIComponent(name)}&hours=24&limit=2000`);
-      const rows = await res.json();
+        async function fetchJson(url, options) {
+            const response = await fetch(url, options);
+            if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+            return response.json();
+        }
 
-      const labels = rows.map(r => {
-        const d = new Date(r.created_at);
-        if (isNaN(d.getTime())) return r.created_at;
-        return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-      });
+        function renderTable() {
+            const body = document.getElementById("latestBody");
+            body.innerHTML = "";
+            document.getElementById("emptyMessage").hidden = latest.length !== 0;
 
-      const ctx = document.getElementById('historyChart').getContext('2d');
-      if (chart) chart.destroy();
-      chart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels,
-          datasets: [
-            { label: '気温 ℃', data: rows.map(r => r.temp), tension: 0.25 },
-            { label: '湿度 %', data: rows.map(r => r.hum), tension: 0.25 },
-            {
-                label: '気圧 hPa',
-                data: rows.map(r => r.press),
-                tension: 0.25,
-                yAxisID: 'yPressure'
-             }
-          ]
-        },
-        options: {
-          responsive: true,
-          interaction: { mode: 'index', intersect: false },
-          plugins: { legend: { position: 'top' } },
-          scales: {
-            x: {
-                ticks: { maxTicksLimit: 12 }
-            },
-            y: {
-                position: 'left'
-            },
-            yPressure: {
-                position: 'right',
-                min: 950,
-                max: 1050,
-                grid: {
-                    drawOnChartArea: false
+            latest.forEach(item => {
+                const row = document.createElement("tr");
+                row.dataset.device = item.name;
+                row.classList.toggle("selected", item.name === selectedDevice);
+                row.innerHTML = `
+                    <td><strong>${escapeHtml(item.display_name || item.name)}</strong><span class="device-id">${escapeHtml(item.name)}</span></td>
+                    <td>${formatValue(item.temp)}</td>
+                    <td>${formatValue(item.hum)}</td>
+                    <td>${formatValue(item.press)}</td>
+                    <td>${escapeHtml(formatTime(item.recorded_at))}</td>
+                `;
+                row.addEventListener("click", () => selectDevice(item.name, true));
+                body.appendChild(row);
+            });
+        }
+
+        function renderMarkers() {
+            markerByDevice.forEach(marker => map.removeLayer(marker));
+            markerByDevice.clear();
+            const bounds = [];
+
+            latest.forEach(item => {
+                if (item.lat == null || item.lng == null) return;
+                const marker = L.marker([item.lat, item.lng]).addTo(map);
+                const label = escapeHtml(item.display_name || item.name);
+                marker.bindPopup(
+                    `<b>${label}</b><br>` +
+                    `気温: ${formatValue(item.temp)} ℃<br>` +
+                    `湿度: ${formatValue(item.hum)} %<br>` +
+                    `気圧: ${formatValue(item.press)} hPa`
+                );
+                marker.bindTooltip(`${label}<br>${formatValue(item.temp, 1)}℃`, {
+                    permanent: true, direction: "top", offset: [0, -10], className: "my-label"
+                });
+                marker.on("click", () => selectDevice(item.name, false));
+                markerByDevice.set(item.name, marker);
+                bounds.push([item.lat, item.lng]);
+            });
+
+            if (bounds.length === 1) map.setView(bounds[0], 14);
+            if (bounds.length > 1) map.fitBounds(bounds, {padding: [40, 40], maxZoom: 14});
+        }
+
+        async function selectDevice(deviceId, openPopup) {
+            selectedDevice = deviceId;
+            renderTable();
+            const selected = latest.find(item => item.name === deviceId);
+            if (selected) document.getElementById("detailTitle").textContent = `${selected.display_name || selected.name} の過去24時間グラフ`;
+            if (openPopup && markerByDevice.has(deviceId)) markerByDevice.get(deviceId).openPopup();
+            await loadDetailChart(deviceId);
+        }
+
+        function commonChartOptions(yTitle) {
+            return {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {mode: "nearest", intersect: false},
+                scales: {
+                    x: {type: "time", time: {tooltipFormat: "yyyy/LL/dd HH:mm", displayFormats: {hour: "HH:mm", minute: "HH:mm"}}, title: {display: true, text: "時刻"}},
+                    y: {title: {display: true, text: yTitle}}
                 },
-                title: {
-                    display: true,
-                    text: '気圧 (hPa)'
-                 }
+                plugins: {legend: {position: "top"}}
+            };
+        }
+
+        async function loadDetailChart(deviceId) {
+            const history = await fetchJson(`/history?name=${encodeURIComponent(deviceId)}&hours=24`);
+            const datasets = [
+                {label: "気温 ℃", data: history.map(p => ({x: p.recorded_at, y: p.temp})), borderColor: "#2878d0", backgroundColor: "#2878d022", yAxisID: "y", tension: .25},
+                {label: "湿度 %", data: history.map(p => ({x: p.recorded_at, y: p.hum})), borderColor: "#e74c67", backgroundColor: "#e74c6722", yAxisID: "y", tension: .25},
+                {label: "気圧 hPa", data: history.map(p => ({x: p.recorded_at, y: p.press})), borderColor: "#f39c35", backgroundColor: "#f39c3522", yAxisID: "pressure", tension: .25}
+            ];
+
+            if (detailChart) detailChart.destroy();
+            detailChart = new Chart(document.getElementById("detailChart"), {
+                type: "line",
+                data: {datasets},
+                options: {
+                    ...commonChartOptions("気温（℃）・湿度（%）"),
+                    scales: {
+                        x: commonChartOptions("").scales.x,
+                        y: {position: "left", title: {display: true, text: "気温（℃）・湿度（%）"}},
+                        pressure: {position: "right", grid: {drawOnChartArea: false}, title: {display: true, text: "気圧（hPa）"}}
+                    }
+                }
+            });
+        }
+
+        async function loadCompareChart() {
+            const series = await fetchJson("/compare?hours=24");
+            const datasets = series.map((item, index) => ({
+                label: item.display_name || item.name,
+                data: item.points.map(point => ({x: point.recorded_at, y: point.temp})),
+                borderColor: COLORS[index % COLORS.length],
+                backgroundColor: COLORS[index % COLORS.length] + "22",
+                pointRadius: 1.8,
+                borderWidth: 2,
+                tension: .2
+            }));
+
+            if (compareChart) compareChart.destroy();
+            compareChart = new Chart(document.getElementById("compareChart"), {
+                type: "line",
+                data: {datasets},
+                options: commonChartOptions("気温（℃）")
+            });
+        }
+
+        async function loadAll() {
+            const status = document.getElementById("statusText");
+            try {
+                status.textContent = "更新中…";
+                latest = await fetchJson("/latest");
+                if (!latest.some(item => item.name === selectedDevice)) selectedDevice = latest[0]?.name || null;
+                renderTable();
+                renderMarkers();
+                if (selectedDevice) await loadDetailChart(selectedDevice);
+                await loadCompareChart();
+                status.textContent = `最終更新: ${new Date().toLocaleTimeString("ja-JP")}`;
+            } catch (error) {
+                console.error(error);
+                status.textContent = `読込エラー: ${error.message}`;
             }
         }
-          
-        }
-      });
-    }
 
-    loadLatest();
-    setInterval(loadLatest, 30000);
-  </script>
+        document.getElementById("refreshButton").addEventListener("click", loadAll);
+        loadAll();
+        setInterval(loadAll, 5 * 60 * 1000);
+    </script>
 </body>
 </html>
