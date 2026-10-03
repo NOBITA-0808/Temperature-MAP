@@ -13,7 +13,7 @@ from flask import Flask, Response, g, jsonify, render_template, request
 BASE_DIR = Path(__file__).resolve().parent
 DISPLAY_NAMES = {
     "pico_test1": "自宅付近",
-    "pico_test2": "大津駅北口",
+    "pico_test2": "自宅付近２",
 }
 
 
