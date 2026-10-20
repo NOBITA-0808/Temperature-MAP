@@ -10,6 +10,7 @@
         let latest = [];
         let selectedDevice = null;
         const markerByDevice = new Map();
+        const observationLayer = L.layerGroup().addTo(map);
         let detailChart = null;
         let compareChart = null;
 
@@ -57,13 +58,13 @@
         }
 
         function renderMarkers() {
-            markerByDevice.forEach(marker => map.removeLayer(marker));
+            observationLayer.clearLayers();
             markerByDevice.clear();
             const bounds = [];
 
             latest.forEach(item => {
                 if (item.lat == null || item.lng == null) return;
-                const marker = L.marker([item.lat, item.lng]).addTo(map);
+                const marker = L.marker([item.lat, item.lng]).addTo(observationLayer);
                 const label = escapeHtml(item.display_name || item.name);
                 marker.bindPopup(
                     `<b>${label}</b><br>` +
@@ -82,6 +83,7 @@
             if (!hasFitted && bounds.length === 1) map.setView(bounds[0], 14);
             if (!hasFitted && bounds.length > 1) map.fitBounds(bounds, {padding: [40, 40], maxZoom: 14});
             if (bounds.length) hasFitted = true;
+            el("showObservationLocations").disabled = bounds.length === 0;
         }
 
         async function selectDevice(deviceId, openPopup) {
@@ -89,7 +91,12 @@
             renderTable();
             const selected = latest.find(item => item.name === deviceId);
             if (selected) document.getElementById("detailTitle").textContent = `${selected.display_name || selected.name} の${periodLabel()}グラフ`;
-            if (openPopup && markerByDevice.has(deviceId)) markerByDevice.get(deviceId).openPopup();
+            if (openPopup && markerByDevice.has(deviceId)) {
+                map.addLayer(observationLayer);
+                const marker = markerByDevice.get(deviceId);
+                map.setView(marker.getLatLng(), 14, {animate:false});
+                marker.openPopup();
+            }
             await loadDetailChart(deviceId);
         }
 
@@ -183,6 +190,33 @@ const csrf = document.querySelector('meta[name=csrf-token]').content;
 const jstInput = value => new Date(new Date(value).getTime()+9*3600*1000).toISOString().slice(0,16);
 const photoLayer = L.markerClusterGroup({maxClusterRadius:60, showCoverageOnHover:false});
 map.addLayer(photoLayer);
+const markerByPhoto = new Map();
+let photoBounds = [];
+L.control.layers(null, {'観測地点':observationLayer,'写真の撮影場所':photoLayer},
+                 {collapsed:false,position:'topright'}).addTo(map);
+
+function fitLocations(points, layer, emptyMessage) {
+    if (!points.length) { el('statusText').textContent=emptyMessage; return; }
+    map.addLayer(layer);
+    map.invalidateSize();
+    if(points.length===1) map.setView(points[0],14,{animate:false});
+    else map.fitBounds(points,{padding:[50,50],maxZoom:14,animate:false});
+    hasFitted=true;
+    el('map').scrollIntoView({behavior:'smooth',block:'center'});
+}
+function focusPhotoLocation(photo) {
+    map.addLayer(photoLayer);
+    map.invalidateSize();
+    map.setView([photo.lat,photo.lng],14,{animate:false});
+    hasFitted=true;
+    const marker=markerByPhoto.get(photo.id);
+    if(marker) photoLayer.zoomToShowLayer(marker,()=>marker.openTooltip());
+    el('map').scrollIntoView({behavior:'smooth',block:'center'});
+}
+el('showPhotoLocations').onclick=()=>fitLocations(photoBounds,photoLayer,'この表示条件の写真はありません。');
+el('showObservationLocations').onclick=()=>fitLocations(
+    latest.filter(p=>p.lat!=null&&p.lng!=null).map(p=>[p.lat,p.lng]),
+    observationLayer,'この期間に位置情報のある観測データはありません。');
 let editingPhoto = null, picking = false, selectedLocation = null, editorGeneration = 0;
 
 function pickStop() {
@@ -238,7 +272,8 @@ el('photoForm').onsubmit=async e=>{
     finally{el('savePhoto').disabled=false;}
 };
 async function loadPhotos(){
-    photoLayer.clearLayers(); el('photoGallery').replaceChildren();
+    photoLayer.clearLayers(); markerByPhoto.clear(); photoBounds=[];
+    el('showPhotoLocations').disabled=true; el('photoGallery').replaceChildren();
     let offset=0,count=0;
     // Sequential pages ensure the whole class collection is shown, rather than silently truncating.
     do{
@@ -246,8 +281,10 @@ async function loadPhotos(){
         for(const photo of page.items){
             const icon=document.createElement('div');
             const img=document.createElement('img'); img.src=photo.thumbnail_url; img.alt='写真'; icon.append(img);
-            L.marker([photo.lat,photo.lng],{icon:L.divIcon({className:'photo-icon',html:icon.innerHTML,iconSize:[48,48]})})
+            const marker=L.marker([photo.lat,photo.lng],{icon:L.divIcon({className:'photo-icon',html:icon.innerHTML,iconSize:[48,48]})})
+                .bindTooltip(escapeHtml(photo.description||'写真')+'<br>'+escapeHtml(formatTime(photo.taken_at)))
                 .on('click',()=>openPhoto(photo.id).catch(showError)).addTo(photoLayer);
+            markerByPhoto.set(photo.id,marker); photoBounds.push([photo.lat,photo.lng]);
             const button=document.createElement('button'); button.type='button';
             const thumb=document.createElement('img'); thumb.src=photo.thumbnail_url; thumb.alt=photo.description||'登録写真'; thumb.loading='lazy';
             const caption=document.createElement('small'); caption.textContent=photo.description||photo.username;
@@ -256,6 +293,8 @@ async function loadPhotos(){
         offset=page.next_offset;
     }while(offset!==null);
     el('photoCount').textContent=`（${count}枚）`;
+    el('showPhotoLocations').disabled=count===0;
+    if(!hasFitted && count>0) fitLocations(photoBounds,photoLayer,'');
     if(count===0) el('photoGallery').textContent='この表示条件の写真はありません。';
 }
 function showError(error){el('statusText').textContent='エラー：'+error.message;}
@@ -267,6 +306,10 @@ async function openPhoto(id){
     const obs=p.observation;
     el('photoWeather').textContent=obs?`近隣の観測値：気温 ${formatValue(obs.temp)} ℃・湿度 ${formatValue(obs.hum)} %・気圧 ${formatValue(obs.press)} hPa。地点：${obs.display_name}、記録：${formatTime(obs.recorded_at)}。写真の場所から約${obs.distance_m}m、撮影との時間差${obs.time_diff_minutes}分。`:'撮影場所から5km以内・撮影前後60分以内の観測データはありません。';
     el('photoActions').replaceChildren();
+    const locationButton=document.createElement('button');
+    locationButton.textContent='この写真の場所を地図で見る';
+    locationButton.onclick=()=>{el('photoDialog').close();focusPhotoLocation(p);};
+    el('photoActions').append(locationButton);
     if(obs){
         const b=document.createElement('button'); b.textContent='この観測地点のグラフ';
         b.onclick=async()=>{el('photoDialog').close();el('filterDate').value=jstInput(obs.recorded_at).slice(0,10);await loadAll();await selectDevice(obs.device_name,true);};
