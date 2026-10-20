@@ -482,8 +482,11 @@ def read_photo():
         with warnings.catch_warnings():
             warnings.simplefilter('error', Image.DecompressionBombWarning)
             image = Image.open(upload.stream)
-            if image.format not in ('JPEG', 'PNG', 'WEBP', 'HEIF', 'AVIF'):
+            # iPhone JPG files may contain MPF auxiliary images and be detected as MPO.
+            # Read only their first (primary) image; preserve its EXIF before re-encoding.
+            if image.format not in ('JPEG', 'MPO', 'PNG', 'WEBP', 'HEIF', 'AVIF'):
                 abort(400, 'JPEG・PNG・WebP・HEIC形式を選んでください。')
+            image.seek(0)
             meta = photo_metadata(image)
             image.load()
             image = ImageOps.exif_transpose(image)
