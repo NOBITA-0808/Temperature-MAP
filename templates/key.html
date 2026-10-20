@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block body %}<main class="wrap panel"><h1>機器 {{ name }} の送信用キー</h1><p><strong>キーはこの画面で一度だけ表示します。</strong>安全に控え、Pico側の <code>DEVICE_KEY</code> に設定してください。</p><p><code id="deviceKey">{{ key }}</code></p><p>再発行すると以前のキーは使えなくなります。ログインパスワードとは別の値です。</p><a href="/admin">管理画面へ戻る</a></main>{% endblock %}

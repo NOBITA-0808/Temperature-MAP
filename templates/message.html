@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block body %}<main class="wrap panel"><p role="status">{{ message }}</p><a href="/">地図へ戻る</a>{% if g.user and g.user.role=='admin' %} · <a href="/admin">管理画面へ</a>{% endif %}</main>{% endblock %}
