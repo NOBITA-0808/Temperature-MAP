@@ -1,0 +1,39 @@
+Pico講座 センサーマップ　地図403表示の修正（2026-10-20）
+
+■ 原因と修正
+OpenStreetMapのタイル配信は、ブラウザーから有効な参照元（Referer）を送ることが必須です。
+アプリのReferrer-Policy: same-origin が、外部の地図配信元への参照元送信を止めていました。
+strict-origin-when-cross-origin に修正し、外部にはサイトのURLの起点だけを送るようにしました。
+ログイン情報や写真ファイルを地図配信元に送る変更ではありません。
+タイルURLも、公式指定の https://tile.openstreetmap.org/{z}/{x}/{y}.png に合わせ、
+著作権表示からOpenStreetMapのライセンスページへリンクするようにしました。
+この修正版server.pyには、直前のiPhone JPG（MPO）対応も含まれています。
+
+■ GitHubに差し替える2ファイル
+1. server.py → 既存のserver.pyに上書き
+2. static/map.js → 既存のstatic/map.jsに上書き
+
+重要：map.jsはルートではなくstaticフォルダー内です。
+staticフォルダーをtemplatesフォルダー内に入れないでください。
+ZIPを展開し、server.pyとstaticフォルダーを、GitHubのserver.pyがある階層へ
+「Add file → Upload files」でアップロードすると配置を維持できます。
+その後「Commit changes」で保存してください。
+course.css、templates、requirements.txt、Renderの環境変数、Pico側のプログラムは変更不要です。
+
+■ 更新後
+Renderの再デプロイが成功するまで待ち、サイトの画面を再読み込みしてください。
+地図の403 Access blocked表示がなくなるか確認してください。
+頻繁な連続再読込や、地図タイルの一括ダウンロードは行わないでください。
+修正しても403が続く場合は、配信元の制限やブラウザー側の参照元設定も確認します。
+
+■ 検証
+・既存テスト14項目がすべて成功。
+・Referrer-Policyの応答ヘッダーをテストで確認。
+・ブラウザーが作るタイルリクエストを確認し、正規URLと参照元の送信を検証。
+  地図タイル自体はテスト用画像で応答し、検証中にOpenStreetMapへ取得要求は送りません。
+・主要画面操作中のJavaScript例外なし。
+・公開中のGitHubやRenderにはこちらから変更していません。
+  配信元の403が解消することは、再デプロイ後の利用中ブラウザーで最終確認が必要です。
+
+公式の利用ルール：
+https://operations.osmfoundation.org/policies/tiles/

@@ -2,8 +2,8 @@
         const COLORS = ["#2878d0", "#e74c67", "#f39c35", "#34a853", "#8e5cc7", "#00a6a6", "#795548", "#607d8b"];
         const map = L.map("map").setView([37, 137], 5);
         let hasFitted = false;
-        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap contributors",
+        L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
             maxZoom: 19
         }).addTo(map);
 
