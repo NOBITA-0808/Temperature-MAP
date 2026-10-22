@@ -129,4 +129,4 @@
         </div>
     </main>
 
-    <script>const IS_LOGGED_IN = {{ (g.user is not none)|tojson }}; const IS_ADMIN = {{ (g.user is not none and g.user.role=='admin')|tojson }};</script><script src="{{url_for('static',filename='map.js')}}"></script>{% endblock %}
+    <script>const IS_LOGGED_IN = {{ (g.user is not none)|tojson }}; const IS_ADMIN = {{ (g.user is not none and g.user.role=='admin')|tojson }};</script><script src="{{url_for('static',filename='map.js', v='20261022tv1')}}"></script>{% endblock %}

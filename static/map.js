@@ -254,7 +254,7 @@ function setEditorControls() {
     el('savePhoto').textContent=editingPhoto?'変更を保存':pending>1?`まとめて登録（${pending}枚）`:pending===1?'登録する':photoQueue.length?'登録済み':'登録する';
 }
 function renderPhotoQueue() {
-    const container=el('photoQueue'); container.replaceChildren(); container.hidden=photoQueue.length===0;
+    const container=el('photoQueue'); container.textContent = ""; container.hidden=photoQueue.length===0;
     photoQueue.forEach((item,index)=>{
         const row=document.createElement('div'); row.className='photo-queue-row';
         row.classList.toggle('selected',index===activeQueueIndex);
@@ -401,7 +401,7 @@ el('photoForm').onsubmit=async e=>{
 }
 async function loadPhotos(){
     photoLayer.clearLayers(); markerByPhoto.clear(); photoBounds=[];
-    el('showPhotoLocations').disabled=true; el('photoGallery').replaceChildren();
+    el('showPhotoLocations').disabled=true; el('photoGallery').textContent = "";
     let offset=0,count=0;
     // Sequential pages ensure the whole class collection is shown, rather than silently truncating.
     do{
@@ -433,7 +433,7 @@ async function openPhoto(id){
     el('photoInfo').textContent=`撮影：${formatTime(p.taken_at)}（日本時間）／緯度 ${p.lat}・経度 ${p.lng}／${p.time_source}`;
     const obs=p.observation;
     el('photoWeather').textContent=obs?`近隣の観測値：気温 ${formatValue(obs.temp)} ℃・湿度 ${formatValue(obs.hum)} %・気圧 ${formatValue(obs.press)} hPa。地点：${obs.display_name}、記録：${formatTime(obs.recorded_at)}。写真の場所から約${obs.distance_m}m、撮影との時間差${obs.time_diff_minutes}分。`:'撮影場所から5km以内・撮影前後60分以内の観測データはありません。';
-    el('photoActions').replaceChildren();
+    el('photoActions').textContent = "";
     const locationButton=document.createElement('button');
     locationButton.textContent='この写真の場所を地図で見る';
     locationButton.onclick=()=>{el('photoDialog').close();focusPhotoLocation(p);};
