@@ -56,6 +56,7 @@
         }
     
 .toolbar label{margin:0} .toolbar{align-items:center} .nav button{padding:5px 8px} .leaflet-control-layers label{margin:4px 0} .leaflet-control-layers input{padding:0}
+.photo-queue{display:grid;gap:8px;margin:12px 0}.photo-queue-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;border:1px solid #dce2e8;padding:8px;border-radius:8px}.photo-queue-row button:first-child{flex:1;min-width:120px;text-align:left;overflow-wrap:anywhere}.photo-queue-row.selected{border-color:#2878d0;background:#eef5ff}.photo-queue-status{font-size:.9rem;overflow-wrap:anywhere}
 </style>{% endblock %}{% block body %}
     <header>
         <h1>Pico W センサーマップ</h1>
@@ -77,15 +78,23 @@
         </div>
 
 
+{% if g.user %}
 <section class="card" style="padding:16px">
 <details id="photoEditor"><summary id="photoEditorTitle">写真を登録する</summary>
-<p class="muted">GPS・撮影日時を読み取ります。GPSがない場合は地図で場所を指定してください。表示・入力日時は日本時間です。写真は講座メンバー全員に公開されます。</p>
-<form id="photoForm"><label>写真（最大20MB。JPEG・PNG・WebP・HEIC）<input type="file" name="photo" id="photoInput" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"></label>
-<label>説明（1000文字まで）<textarea name="description" maxlength="1000" rows="2"></textarea></label>
+<p class="muted">GPS・撮影日時を読み取ります。GPSがない場合は地図で場所を指定してください。表示・入力日時は日本時間です。登録した写真と撮影場所は、ログインなしで閲覧できます。</p>
+<form id="photoForm" novalidate><label>写真（1回に10枚まで・1枚20MB未満。JPEG・PNG・WebP・HEIC）<input type="file" name="photo" id="photoInput" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"></label>
+<p class="muted">複数選択できます。各写真のGPS・日時を読み取った後、下の一覧で1枚ずつ確認・修正してください。保存は順番に行います。</p>
+<div id="photoQueue" class="photo-queue" aria-label="選択した写真の一覧" hidden></div>
+<p id="photoQueueSummary" class="muted" role="status"></p>
+<p id="activePhotoName" style="font-weight:bold" hidden></p>
+<label>この写真の説明（1000文字まで）<textarea name="description" maxlength="1000" rows="2"></textarea></label>
 <div class="row"><label>緯度 <input name="lat" id="photoLat" type="number" step="any" min="-90" max="90" required></label><label>経度 <input name="lng" id="photoLng" type="number" step="any" min="-180" max="180" required></label><button type="button" id="pickLocation">地図から場所を指定</button></div>
 <label>撮影日時（日本時間） <input name="taken_at" id="photoTime" type="datetime-local" required></label><p id="metadataStatus" class="muted" role="status"></p>
 <div class="row"><button id="savePhoto">登録する</button><button type="button" id="cancelPhoto">入力をリセット</button></div><p id="photoStatus" role="status"></p></form></details>
 </section>
+{% else %}
+<section class="card" style="padding:16px">写真の登録には <a href="/login">ID・パスワードでログイン</a> してください。地図・グラフ・写真はログインなしで閲覧できます。</section>
+{% endif %}
 <section class="card" style="padding:16px"><h2 style="padding-left:0">地図の写真 <span id="photoCount"></span></h2><p class="muted">近い場所の写真は数字にまとまります。拡大するか、下の写真を押して詳細を表示できます。日付未指定では全写真を表示します。「写真の場所を表示」で撮影地点をまとめて表示できます。</p><div id="photoGallery" class="gallery"></div></section>
 <dialog id="photoDialog"><button type="button" id="closePhoto">閉じる</button><h2 id="photoHeading">写真</h2><img id="fullPhoto" class="photo-full" alt="登録写真"><p id="photoDescription"></p><p id="photoInfo" class="muted"></p><p id="photoWeather"></p><div id="photoActions" class="row"></div></dialog>
         <section class="card">
@@ -120,4 +129,4 @@
         </div>
     </main>
 
-    <script>const IS_ADMIN = {{ (g.user.role=='admin')|tojson }};</script><script src="{{url_for('static',filename='map.js')}}"></script>{% endblock %}
+    <script>const IS_LOGGED_IN = {{ (g.user is not none)|tojson }}; const IS_ADMIN = {{ (g.user is not none and g.user.role=='admin')|tojson }};</script><script src="{{url_for('static',filename='map.js')}}"></script>{% endblock %}

@@ -97,7 +97,8 @@ def init_db():
         if DB_PATH.exists():
             with sqlite3.connect(DB_PATH) as db:
                 cols = [r[1] for r in db.execute('PRAGMA table_info(sensor_history)')]
-            if cols and 'deleted_at' not in cols:
+                photo_cols = [r[1] for r in db.execute('PRAGMA table_info(photos)')]
+            if (cols and 'deleted_at' not in cols) or (photo_cols and 'upload_token' not in photo_cols):
                 backup_snapshot('before-upgrade')
         with sqlite3.connect(DB_PATH) as db:
             db.executescript('''
@@ -117,7 +118,7 @@ def init_db():
                     id INTEGER PRIMARY KEY, owner_id INTEGER NOT NULL REFERENCES users(id),
                     filename TEXT NOT NULL, thumbnail TEXT NOT NULL, description TEXT NOT NULL,
                     lat REAL NOT NULL, lng REAL NOT NULL, taken_at TEXT NOT NULL,
-                    time_source TEXT NOT NULL, uploaded_at TEXT NOT NULL, deleted_at TEXT);
+                    time_source TEXT NOT NULL, uploaded_at TEXT NOT NULL, deleted_at TEXT, upload_token TEXT);
                 CREATE INDEX IF NOT EXISTS idx_photos_date ON photos(taken_at);
                 CREATE TABLE IF NOT EXISTS login_attempts (bucket TEXT PRIMARY KEY, count INTEGER NOT NULL, started REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS audit (
@@ -127,6 +128,10 @@ def init_db():
             cols = [r[1] for r in db.execute('PRAGMA table_info(sensor_history)')]
             if 'deleted_at' not in cols:
                 db.execute('ALTER TABLE sensor_history ADD COLUMN deleted_at TEXT')
+            photo_cols = [r[1] for r in db.execute('PRAGMA table_info(photos)')]
+            if 'upload_token' not in photo_cols:
+                db.execute('ALTER TABLE photos ADD COLUMN upload_token TEXT')
+            db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_photos_upload_token ON photos(owner_id,upload_token) WHERE upload_token IS NOT NULL')
             db.execute('CREATE INDEX IF NOT EXISTS idx_history_jd ON sensor_history(julianday(created_at))')
             db.execute('CREATE INDEX IF NOT EXISTS idx_history_device_jd ON sensor_history(device_name,julianday(created_at))')
             if not db.execute('SELECT 1 FROM users LIMIT 1').fetchone():
@@ -179,8 +184,13 @@ def protect():
             session.clear()
     if request.endpoint in ('health', 'static'):
         return
-    if request.endpoint not in ('login', 'save_sensor_data') and not g.user:
-        if request.path.startswith('/api/') or request.endpoint in ('api_latest', 'api_history', 'compare', 'download_csv', 'photo_file'):
+    # Public viewing is an explicit read-only allowlist. All mutations remain protected.
+    public_read = request.method in ('GET', 'HEAD') and request.endpoint in {
+        'index', 'api_latest', 'api_history', 'compare', 'download_csv',
+        'list_photos', 'photo_detail', 'photo_file',
+    }
+    if request.endpoint not in ('login', 'save_sensor_data') and not public_read and not g.user:
+        if request.method not in ('GET', 'HEAD') or request.path.startswith('/api/'):
             abort(401, 'ログインが必要です。')
         return redirect(url_for('login'))
     if request.endpoint and request.endpoint.startswith('admin_') and (not g.user or g.user['role'] != 'admin'):
@@ -267,7 +277,7 @@ def login():
 @app.post('/logout')
 def logout():
     session.clear()
-    return redirect(url_for('login'))
+    return redirect(url_for('index'))
 
 
 @app.route('/password', methods=['GET', 'POST'])
@@ -531,6 +541,15 @@ def photo_fields(meta=None):
 
 @app.post('/api/photos')
 def upload_photo():
+    # Keep one token per selected file so retrying a lost response does not save it twice.
+    upload_token = request.form.get('upload_token') or None
+    if upload_token is not None:
+        if not re.fullmatch(r'[A-Za-z0-9_-]{16,100}', upload_token):
+            abort(400, '登録確認用IDが無効です。写真を選び直してください。')
+        existing = get_db().execute('SELECT id FROM photos WHERE owner_id=? AND upload_token=?',
+                                    (g.user['id'], upload_token)).fetchone()
+        if existing:
+            return jsonify(ok=True, id=existing['id'], already_saved=True), 201
     image, meta = read_photo()
     lat, lng, taken, description = photo_fields(meta)
     image_bytes, thumb_bytes = io.BytesIO(), io.BytesIO()
@@ -550,10 +569,10 @@ def upload_photo():
     try:
         (PHOTO_DIR / filename).write_bytes(image_bytes.getvalue())
         (PHOTO_DIR / thumbnail).write_bytes(thumb_bytes.getvalue())
-        cur = db.execute('''INSERT INTO photos(owner_id,filename,thumbnail,description,lat,lng,taken_at,time_source,uploaded_at)
-                            VALUES(?,?,?,?,?,?,?,?,?)''',
+        cur = db.execute('''INSERT INTO photos(owner_id,filename,thumbnail,description,lat,lng,taken_at,time_source,uploaded_at,upload_token)
+                            VALUES(?,?,?,?,?,?,?,?,?,?)''',
                          (g.user['id'], filename, thumbnail, description, lat, lng, taken,
-                          '入力・確認済み（日本時間）' if request.form.get('taken_at') else meta['time_source'], now_iso()))
+                          '入力・確認済み（日本時間）' if request.form.get('taken_at') else meta['time_source'], now_iso(), upload_token))
         audit('photo_upload', cur.lastrowid)
         db.commit()
     except Exception:
@@ -567,7 +586,7 @@ def upload_photo():
 def photo_view(row):
     return dict(id=row['id'], owner_id=row['owner_id'], username=row['username'],
                 description=row['description'], lat=row['lat'], lng=row['lng'], taken_at=row['taken_at'],
-                time_source=row['time_source'], can_edit=g.user['role']=='admin' or g.user['id']==row['owner_id'],
+                time_source=row['time_source'], can_edit=bool(g.user and (g.user['role']=='admin' or g.user['id']==row['owner_id'])),
                 url=url_for('photo_file', photo_id=row['id'], kind='full'),
                 thumbnail_url=url_for('photo_file', photo_id=row['id'], kind='thumb'))
 
@@ -622,7 +641,7 @@ def photo_detail(photo_id):
 def photo_file(photo_id, kind):
     if kind not in ('full','thumb'):
         abort(404)
-    row = photo_row(photo_id, include_deleted=g.user['role']=='admin')
+    row = photo_row(photo_id, include_deleted=bool(g.user and g.user['role']=='admin'))
     return send_file(PHOTO_DIR / row['filename' if kind=='full' else 'thumbnail'], mimetype='image/jpeg')
 
 
